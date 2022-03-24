@@ -81,7 +81,7 @@
 6. 刷新 lesscode url
 
    - 新增 https 相关内容 (后续版本修复)
-  
+    
         登陆至 lesscode 所在机器，在 /etc/consul-template/templates/lesscode.conf 文件 server 内新增如下内容：
 
         ```bash
@@ -114,3 +114,66 @@
     ```bash
     ./bkcli install saas-o 
     ```
+
+
+
+8. 蓝盾（BK/CI）HTTPS切换
+
+   - 登陆CI服务器
+
+   ```bash
+   cd /data/install/
+   source utils.fc
+   ssh $BK_CI_IP
+   ```
+
+   - 配置nginx，打开SSL
+
+   ```bash
+   # 增加devops.ssl 配置文件
+   cat << EOF >/data/bkce/ci/gateway/conf/devops.ssl
+   ssl_certificate /data/bkce/cert/bk_domain.crt;   #注意： 确认证书存在，不存在请先将证书同步到这里
+   ssl_certificate_key /data/bkce/cert/bk_domain.key;
+   ssl_protocols TLSv1.2 TLSv1.3;
+   ssl_prefer_server_ciphers on;
+   ssl_session_cache shared:SSL:10m;
+   ssl_session_timeout 10m;
+   ssl_ciphers HIGH:!aNULL:!MD5;
+   error_page 497  https://$host$uri?$args;
+   
+   EOF
+   
+   # 配置nginx.conf
+   cd /data/bkce/ci/gateway/conf/
+   vim devops.server.conf
+   # 在server下增加如下配置：
+   
+   ### ssl config begin ###
+   listen 443 ssl;
+   include devops.ssl;
+   #force https-redirects
+   if ($scheme = http) {
+      return 301 https://$server_name$request_uri;
+   }
+   ### ssl config end ###
+   
+   ```
+
+   - 重载nginx
+
+   ```bash
+   /usr/local/openresty/nginx/sbin/nginx -p /data/bkce/ci/gateway  -s reload
+   ```
+
+   - 将PAAS桌面上蓝盾的地址切换成https:
+
+   ```sql
+   # 登陆数据库, 将http修改成https
+   mysql --socket=/var/run/mysql/default.mysql.socket -uroot -p
+   use open_paas;
+   update paas_app SET external_url=replace(external_url,'http://devops', 'https://devops') where name = '蓝盾';
+   ```
+
+   
+
+   
